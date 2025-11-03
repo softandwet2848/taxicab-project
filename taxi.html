@@ -1232,21 +1232,26 @@
         
         // (이 함수는 연습 모드의 '연료 최적화' 경로에 사용됩니다)
         function findFuelPathDijkstra(start, end, size, mapData, obstacles) {
+            // 간단한 우선순위 큐 (배열 + 정렬)
             const priorityQueue = [{ ...start, cost: 0, path: [] }];
             const costs = new Map();
             costs.set(`${start.x},${start.y}`, 0);
             const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
 
             while (priorityQueue.length > 0) {
+                // 비용이 가장 낮은 항목을 꺼냄
                 priorityQueue.sort((a, b) => a.cost - b.cost);
                 const { x, y, cost, path } = priorityQueue.shift(); 
 
                 if (x === end.x && y === end.y) {
-                    return path; 
+                    return path; // 목표 도달
                 }
+                
+                // 이미 더 나은 경로를 찾았다면 스킵
                 if (cost > (costs.get(`${x},${y}`) || Infinity)) {
                     continue;
                 }
+
                 for (const [dx, dy] of directions) {
                     const newX = x + dx, newY = y + dy;
                     if (newX < 0 || newX >= size || newY < 0 || newY >= size) continue; 
@@ -1254,9 +1259,10 @@
                     const key = `${newX},${newY}`;
                     const tile = Array.isArray(mapData[0]) ? mapData[newY][newX] : mapData[newY].charAt(newX); 
                     
-                    if (obstacles.includes(tile)) continue;
+                    if (obstacles.includes(tile)) continue; // 장애물 스킵
 
                     // 핵심 로직: 연료 칸은 비용을 0.1로, 나머지는 1로 설정
+                    // (연료를 먹는 것이 9칸 이동보다 이득이 되도록)
                     let moveCost = (tile === ENTITY_TYPE.FUEL) ? 0.1 : 1;
                     
                     const newCost = cost + moveCost;
