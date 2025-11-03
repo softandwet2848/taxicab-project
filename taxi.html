@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>택시 마스터</title>
+    <!-- Tone.js 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+
+        :root {
+            --grid-size: 10;
+            --cell-size: 40px;
+            --border-color: #ddd;
+            --text-color: #333;
+            --background-color: #f9f9f9;
+            --panel-background: #ffffff;
+            --button-primary-color: #007BFF;
+            --button-primary-hover: #0069D9;
+            --board-background: #ecf0f1;
+            --path-color: #a7f3d0;
+        }
+        
+        body.dark-mode {
+            --border-color: #444;
+            --text-color: #eee;
+            --background-color: #1a1a1a;
+            --panel-background: #2c3e50;
+            --board-background: #34495e;
+            --path-color: #2a4b3d;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: var(--background-color);
+            margin: 0;
+            color: var(--text-color);
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+
+        #game-container, #hidden-stage-container {
+            display: none;
+            flex-direction: row; 
+            background-color: var(--panel-background);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        #game-container { max-width: 800px; } 
+        #hidden-stage-container { max-width: 900px; align-items: stretch; }
+
+        #game-board, #hidden-stage-board {
+            display: grid;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 20px;
+            flex-shrink: 0;
+            background-color: var(--board-background);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        #game-board {
+            grid-template-columns: repeat(var(--grid-size), var(--cell-size));
+            grid-template-rows: repeat(var(--grid-size), var(--cell-size));
+        }
+         #hidden-stage-board {
+            --hidden-grid-size: 16;
+            --hidden-cell-size: 30px;
+            grid-template-columns: repeat(var(--hidden-grid-size), var(--hidden-cell-size));
+            grid-template-rows: repeat(var(--hidden-grid-size), var(--hidden-cell-size));
+        }
+
+        .cell, .hidden-cell {
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #fff;
+            font-size: 1.5rem; 
+        }
+        
+        body.dark-mode .cell, body.dark-mode .hidden-cell { background-color: #4a637d; }
+        body.dark-mode .hidden-cell.wall { background-color: #2c3e50; }
+
+        .cell {
+            width: var(--cell-size); height: var(--cell-size);
+            border: 1px solid var(--border-color);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .cell.path {
+            background-color: var(--path-color);
+        }
+
+         .hidden-cell { 
+            width: var(--hidden-cell-size); 
+            height: var(--hidden-cell-size); 
+            font-size: 1.2em;
+        }
+        .hidden-cell.wall { background-color: #34495e; }
+
+        #sidebar, #hidden-sidebar {
+            flex-grow: 1; padding: 20px; background-color: #f0f0f0;
+            display: flex; flex-direction: column; justify-content: space-between;
+            border-left: 1px solid var(--border-color);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        
+        body.dark-mode #sidebar, body.dark-mode #hidden-sidebar { background-color: #2c3e50; border-left: 1px solid #444; }
+        
+        #hidden-sidebar { width: 250px; flex-grow: 0; }
+
+        #hud p, #hidden-hud p { margin: 10px 0; font-size: 1.1em; font-weight: 700; }
+        #hud span, #hidden-hud span { font-weight: 400; margin-left: 8px; color: #555; }
+        body.dark-mode #hud span, body.dark-mode #hidden-hud span { color: #ccc; }
+        #message, #hidden-message { 
+            margin-top: 20px; font-weight: 700; color: #E74C3C; 
+            text-align: center; min-height: 20px; 
+        }
+        
+        button {
+            background-color: var(--button-primary-color); color: white; padding: 12px 18px; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 1.1em; font-weight: 700; margin-top: 15px;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        button:hover { background-color: var(--button-primary-hover); transform: translateY(-2px); }
+        button:disabled { background-color: #aaa; cursor: not-allowed; transform: none; }
+        
+        .modal {
+            display: none; position: fixed; left: 0; top: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); justify-content: center; align-items: center; z-index: 1000;
+        }
+        .modal-content {
+            background-color: var(--panel-background); color: var(--text-color); padding: 30px 40px; border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2); text-align: center; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .modal-content h2 { margin-top: 0; font-weight: 700; }
+        .modal-content p { margin: 15px 0; font-size: 1.1em; line-height: 1.6; }
+        .modal-content ul { list-style: none; padding: 0; margin: 20px 0; text-align: left; }
+        .modal-content ul li { margin-bottom: 10px; font-size: 1.1em; display: flex; align-items: center; }
+        .modal-content ul li span { 
+            width: 24px; height: 24px; margin-right: 10px; 
+            font-size: 24px; display: inline-block; text-align: center;
+        }
+        
+        /* 로비 버튼 */
+        #lobby-modal .difficulty-buttons { 
+            display: grid; 
+            grid-template-columns: 1fr; /* Simplified to 1 column */ 
+            gap: 15px; 
+            margin-top: 25px; 
+        }
+        #lobby-modal .difficulty-buttons button { width: 100%; margin-top: 0; }
+        #btn-play { background-color: #28a745; }
+        #btn-play:hover { background-color: #218838; }
+        #btn-practice { background-color: #17a2b8; }
+        #btn-practice:hover { background-color: #138496; }
+        #btn-hidden-stage { background-color: #6f42c1; } 
+        #btn-hidden-stage:hover { background-color: #5a32a3; }
+        #btn-tutorial { background-color: #6c757d; } 
+        #btn-tutorial:hover { background-color: #5a6268; }
+        
+        /* 난이도 선택 모달 버튼 */
+        #difficulty-modal .difficulty-buttons { display: flex; flex-direction: column; gap: 15px; margin-top: 25px; }
+        #difficulty-modal button { width: 100%; margin-top: 0; }
+        #btn-easy { background-color: #28a745; } #btn-easy:hover { background-color: #218838; }
+        #btn-normal { background-color: #ffc107; color: #333 } #btn-normal:hover { background-color: #e0a800; }
+        #btn-hard { background-color: #dc3545; } #btn-hard:hover { background-color: #c82333; }
+
+        #grade-details {
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #666;
+            text-align: left;
+            background-color: var(--board-background); 
+            padding: 10px;
+            border-radius: 8px;
+        }
+        body.dark-mode #grade-details { color: #ccc; }
+        
+        /* 설정 (단순화) */
+        #settings-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+        }
+        #settings-controls button {
+            margin-top: 0;
+            padding: 8px 12px;
+            font-size: 0.9em;
+            background-color: #6c757d;
+        }
+        #settings-controls button:hover {
+            background-color: #5a6268;
+        }
+
+        /* 모바일 컨트롤러 */
+        #mobile-controls { display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); width: 180px; height: 120px; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 5px; z-index: 100; }
+        #mobile-controls button { font-size: 1.8em; margin: 0; padding: 0; opacity: 0.7; background-color: #555; border-radius: 50%; user-select: none; }
+        #mobile-controls button:active { transform: scale(0.95); }
+        #btn-mobile-up { grid-column: 2; grid-row: 1; } #btn-mobile-left { grid-column: 1; grid-row: 2; } #btn-mobile-right { grid-column: 3; grid-row: 2; } #btn-mobile-down { grid-column: 2; grid-row: 2; }
+        
+        /* 반응형 스타일 */
+        @media (max-width: 768px) { 
+            #game-container, #hidden-stage-container { 
+                flex-direction: column; 
+                height: auto; 
+                margin-top: 20px; 
+                margin-bottom: 150px; 
+            } 
+            #sidebar, #hidden-sidebar { 
+                width: 100%; 
+                border-left: none; 
+                border-top: 1px solid var(--border-color); 
+            } 
+            body.dark-mode #sidebar, body.dark-mode #hidden-sidebar { 
+                border-top: 1px solid #444; 
+            } 
+            #game-container { max-width: 100%; } 
+        }
+        @media (max-width: 500px) { 
+            body { padding: 10px; } 
+            h1 { font-size: 1.5em; } 
+            :root { --cell-size: 35px; } 
+            #hidden-stage-board { --hidden-cell-size: 20px; } 
+            #game-board, #hidden-stage-board { margin: 10px; } 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="main-title" style="text-align: center;"> <h1>🚕 택시 마스터 🚕</h1> </div>
+    <div id="game-container"> <div id="game-board"></div> <div id="sidebar"> <div> <p><strong>난이도: <span id="difficulty-display"></span></strong></p> <div id="hud"> <p>연료: <span id="fuel-display">0</span></p> <p>승객: <span id="passenger-display">0</span></p> <p>이동: <span id="moves-display">0</span></p> </div> </div> <div> <p id="message"></p> <button id="main-menu-button">메인 메뉴로</button> </div> </div> </div>
+    <div id="hidden-stage-container"> <div id="hidden-stage-board"></div> <div id="hidden-sidebar"> <h2>추격전!</h2> <p>추격자를 피해 출구(🏁)까지 도망치세요!</p> <div id="hidden-hud"> <p>남은 시간: <span id="time-display">60</span>초</p> </div> <p id="hidden-message"></p> <button id="hidden-main-menu-button">포기하기</button> </div> </div>
+    
+    <!-- Modals -->
+    <div id="lobby-modal" class="modal" style="display: flex;"> <div class="modal-content"> <h2>메인 메뉴</h2> <p>환영합니다!</p> <div class="difficulty-buttons">
+            <button id="btn-play">🎮 게임 시작</button>
+            <button id="btn-practice">🎯 연습 모드</button>
+            <button id="btn-tutorial">📖 게임 방법</button> 
+            <button id="btn-hidden-stage" style="display:none;"> <strong>✨ 히든 스테이지 ✨</strong> </button> 
+        </div> 
+        <div id="settings-controls">
+            <button id="toggle-dark-mode">테마: 라이트</button>
+            <button id="toggle-music">음악: 켜기</button>
+        </div>
+    </div> </div>
+            
+    <div id="difficulty-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="difficulty-modal-title">난이도 선택</h2>
+            <p>플레이할 난이도를 선택하세요.</p>
+            <div class="difficulty-buttons">
+                <button id="btn-easy">이지 (Easy)</button>
+                <button id="btn-normal">노말 (Normal)</button>
+                <button id="btn-hard">하드 (Hard)</button>
+                <button id="btn-difficulty-back" style="background-color: #6c757d;">뒤로가기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tutorial-modal" class="modal"> <div class="modal-content"> 
+        <h2>게임 설명</h2> 
+        <ul> 
+            <li><span>🚖</span><strong>택시</strong>: 당신의 차량</li> 
+            <li><span>🧍</span><strong>승객</strong>: 태워야 할 목표</li> 
+            <li><span>⛽</span><strong>연료통</strong>: 획득 시 연료 +5</li> 
+            <li><span>🏢</span><strong>건물</strong>: 통과 불가능한 장애물</li> 
+            <li><span>👤</span><strong>보행자</strong>: 충돌 시 연료 -1 (노말/하드)</li> 
+            <li><span style="background-color: var(--path-color); border: 1px solid #999; border-radius: 4px; padding: 0 4px;">&nbsp;</span><strong>경로</strong>: 연습 모드에서만 표시</li> 
+        </ul> 
+        <p>방향키(↑ ↓ ← →) 또는 WASD로 승객을 태우세요. 연료가 0이 되면 게임 오버!</p>
+        <div id="grade-details-tutorial" style="background-color: var(--board-background); margin-top: 20px; font-size: 0.9em; color: #666; text-align: left; padding: 10px; border-radius: 8px;">
+            <!-- 원본 코드의 'grade-details' ID가 중복되어 'grade-details-tutorial'로 변경 -->
+            <strong>⭐ 별점 기준 (연습 모드 제외)</strong><br>
+            ★☆☆☆☆: 승객 1명 이상<br>
+            ★★☆☆☆: 승객 3명 이상<br>
+            ★★★☆☆: 승객 6명 이상<br>
+            ★★★★☆: 승객 10명 이상 & 승객당 이동 12회 미만<br>
+            ★★★★★: (하드 모드) 승객 15명 이상 & 승객당 이동 8회 미만
+            <!-- 5성 조건에서 연료템 조건이 제거되었습니다 -->
+        </div>
+        <button id="tutorial-close-button">닫기</button> 
+    </div> </div>
+    
+    <div id="gameover-modal" class="modal"> <div class="modal-content"> <h2 id="gameover-title">게임 오버!</h2> <p id="grade-display" style="font-size: 1.3em; font-weight: bold;"></p> <p id="grade-text" style="font-size: 1.1em;"></p> <div id="grade-details"></div> <button id="play-again-button">메인 메뉴로</button> </div> </div>
+    
+    <div id="mobile-controls"> <button id="btn-mobile-up">▲</button> <button id="btn-mobile-left">◀</button> <button id="btn-mobile-down">▼</button> <button id="btn-mobile-right">▶</button> </div>
+
+    <script type="module">
+        // (Firebase imports all removed)
+
+        const GRID_SIZE = 10;
+        const FUEL_REFILL_AMOUNT = 5;
+        const NUM_BUILDINGS = 15;
+        const NUM_PEDESTRIANS = 3;
+
+        const DIFFICULTY = {
+            EASY: { name: '이지', fuel: 25, pedestrians: false, fuelItems: 8, passengerRange: 2 }, // 6 -> 8
+            NORMAL: { name: '노말', fuel: 20, pedestrians: true, fuelItems: 6, passengerRange: 3 }, // 4 -> 6
+            HARD: { name: '하드', fuel: 15, pedestrians: true, fuelItems: 5, passengerRange: 10 }, // 3 -> 5
+        };
+        
+        const EMOJIS = { 
+            TAXI: '🚖', PASSENGER: '🧍', FUEL: '⛽',
+            BUILDING: '🏢', PEDESTRIAN: '👤', EMPTY: '',
+            CHASER: '😈', EXIT: '🏁', WALL: '🌲',
+        };
+        
+        const ENTITY_TYPE = { 
+            TAXI: 'TAXI', PASSENGER: 'PASSENGER', FUEL: 'FUEL',
+            BUILDING: 'BUILDING', PEDESTRIAN: 'PEDESTRIAN',
+            EMPTY: null, CHASER: 'CHASER', EXIT: 'EXIT', WALL: 'WALL',
+        };
+        
+        // (Achievement list removed as it's no longer a tracked system)
+        
+        // --- Game State ---
+        let board = [], taxiPos = { x: 0, y: 0 }, passengerPos = { x: 0, y: 0 };
+        let pedestrianPositions = []; 
+        let currentPath = []; 
+        let isPracticeMode = false;
+        let currentDifficulty = null, currentFuel = 0, passengersCount = 0, totalMoves = 0, fuelItemsCollected = 0;
+        let gameActive = false, firstMoveTime = null;
+        let hiddenStageActive = false;
+        let playerHiddenPos = {x: 0, y: 0}, chaserPos = {x: 0, y: 0};
+        let chaserInterval = null, hiddenTimeInterval = null, hiddenTimeLeft = 60;
+
+        // --- Settings (Local state) ---
+        let gameSettings = { 
+            darkMode: false, 
+            musicOn: true 
+        };
+        // --- Session State (Resets on refresh) ---
+        let hiddenStageUnlocked = false; 
+
+        // --- Hidden Stage Map ---
+        const HIDDEN_GRID_SIZE = 16;
+        const HIDDEN_MAP = [ "################", "#S..#......#...#", "#.#.#.####.#.#.#", "#.#...#....#.#X#", "#.###.####.#.#.#", "#...#.#......#.#", "###.#.#.######.#", "#.#...#........#", "#.#.#######.####", "#...#.....#....#", "#.#####.#.####.#", "#.#...#.#....#.#", "#.#.#.#.####.#.#", "#...#.....C....#", "################", "################" ];
+
+        // --- DOM Elements ---
+        const allDOMElements = {
+            gameContainer: document.getElementById('game-container'), hiddenContainer: document.getElementById('hidden-stage-container'),
+            gameBoard: document.getElementById('game-board'), hiddenBoard: document.getElementById('hidden-stage-board'),
+            fuelDisplay: document.getElementById('fuel-display'), passengerDisplay: document.getElementById('passenger-display'),
+            movesDisplay: document.getElementById('moves-display'), difficultyDisplay: document.getElementById('difficulty-display'),
+            message: document.getElementById('message'),
+            lobbyModal: document.getElementById('lobby-modal'), tutorialModal: document.getElementById('tutorial-modal'),
+            difficultyModal: document.getElementById('difficulty-modal'), 
+            gameoverModal: document.getElementById('gameover-modal'),
+            gradeDisplay: document.getElementById('grade-display'), gradeText: document.getElementById('grade-text'), gradeDetails: document.getElementById('grade-details'),
+            mobileControls: document.getElementById('mobile-controls'),
+            mainTitle: document.getElementById('main-title'),
+            toggleMusicBtn: document.getElementById('toggle-music'),
+            toggleDarkModeBtn: document.getElementById('toggle-dark-mode'),
+        };
+        
+        // --- Audio Context & SFX ---
+        let audioContextStarted = false;
+        let lobbyMusic, gameMusic;
+        let musicGainNode;
+        let sfx = {}; 
+
+        async function initAudio() {
+            if (audioContextStarted || (Tone.context && Tone.context.state === 'running')) return;
+            try {
+                await Tone.start();
+                console.log("AudioContext started.");
+                audioContextStarted = true;
+
+                musicGainNode = new Tone.Gain(0.2).toDestination(); 
+                const sfxGainNode = new Tone.Gain(0.4).toDestination(); 
+
+                const lobbySynth = new Tone.PolySynth(Tone.AMSynth, {
+                    harmonicity: 1.2,
+                    oscillator: { type: "fatsine" },
+                    envelope: { attack: 0.1, decay: 0.5, sustain: 0.3, release: 1.0 },
+                    volume: -12
+                }).connect(musicGainNode);
+                
+                const gameSynth = new Tone.MonoSynth({
+                    oscillator: { type: "pulse", width: 0.6 },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 },
+                    filterEnvelope: { attack: 0.01, decay: 0.05, sustain: 0, release: 0.1, baseFrequency: 300, octaves: 4 }
+                }).connect(musicGainNode);
+
+                lobbyMusic = new Tone.Sequence((time, note) => {
+                    lobbySynth.triggerAttackRelease(note, "1n", time);
+                }, ["C4", null, "G4", null, "E4", null, "F4", null, 
+                    "C4", null, "G4", null, "E4", null, "D4", null], "2n").start(0);
+                lobbyMusic.humanize = true;
+                
+                gameMusic = new Tone.Sequence((time, note) => {
+                    gameSynth.triggerAttackRelease(note, "16n", time);
+                }, ["C3", ["E3", "C3"], "G3", "E3", "C3", ["E3", "C3"], "G3", "E3"], "8n").start(0);
+                gameMusic.loop = true;
+
+                Tone.Transport.bpm.value = 90;
+                Tone.Transport.start();
+                stopAllMusic();
+
+                sfx = {
+                    move: new Tone.Synth({ oscillator: { type: 'sine' }, volume: -15, envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.1 } }).connect(sfxGainNode),
+                    pickup: new Tone.Synth({ oscillator: { type: 'triangle' }, volume: -10, envelope: { attack: 0.01, decay: 0.1, sustain: 0.05, release: 0.1 } }).connect(sfxGainNode),
+                    fuel: new Tone.Synth({ oscillator: { type: 'sawtooth' }, volume: -10, envelope: { attack: 0.01, decay: 0.1, sustain: 0.05, release: 0.1 } }).connect(sfxGainNode),
+                    bump: new Tone.NoiseSynth({ noise: { type: 'brown' }, volume: -18, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).connect(sfxGainNode),
+                    gameOver: new Tone.Synth({ oscillator: { type: 'square' }, volume: -10, envelope: { attack: 0.01, decay: 0.5, sustain: 0, release: 0.1 } }).connect(sfxGainNode),
+                    win: new Tone.Synth({ oscillator: { type: 'sine' }, volume: -10, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 } }).connect(sfxGainNode),
+                };
+
+            } catch (e) {
+                console.warn("Audio context could not be started.", e);
+            }
+        }
+        
+        function playSfx(sound) {
+            if (audioContextStarted && gameSettings.musicOn && sfx && sfx[sound]) {
+                 try {
+                    const now = Tone.now();
+                    if (sound === 'pickup') {
+                        sfx.pickup.triggerAttackRelease("C5", "16n", now);
+                        sfx.pickup.triggerAttackRelease("G5", "16n", now + 0.1);
+                    } else if (sound === 'fuel') {
+                        sfx.fuel.triggerAttackRelease("E5", "16n", now);
+                        sfx.fuel.triggerAttackRelease("A5", "16n", now + 0.1);
+                    } else if (sound === 'move') {
+                        sfx.move.triggerAttackRelease("C6", "32n", now);
+                    } else if (sound === 'bump') {
+                        sfx.bump.triggerAttackRelease("8n", now);
+                    } else if (sound === 'gameOver') {
+                        sfx.gameOver.triggerAttackRelease("C3", "4n", now);
+                    } else if (sound === 'win') {
+                        sfx.win.triggerAttackRelease("C5", "16n", now + 0);
+                        sfx.win.triggerAttackRelease("E5", "16n", now + 0.1);
+                        sfx.win.triggerAttackRelease("G5", "16n", now + 0.2);
+                        sfx.win.triggerAttackRelease("C6", "8n", now + 0.3);
+                    }
+                } catch(e) {
+                    console.warn("Error playing SFX:", e);
+                }
+            }
+        }
+
+        function playLobbyMusic() {
+            if (!audioContextStarted || !gameSettings.musicOn || !lobbyMusic) return;
+            if (gameMusic) gameMusic.stop();
+            if (lobbyMusic.state !== "started") lobbyMusic.start(Tone.now());
+        }
+
+        function playGameMusic() {
+            if (!audioContextStarted || !gameSettings.musicOn || !gameMusic) return;
+            if (lobbyMusic) lobbyMusic.stop();
+            if (gameMusic.state !== "started") gameMusic.start(Tone.now());
+        }
+        
+        function stopAllMusic() {
+            if (!audioContextStarted) return;
+            if (lobbyMusic) lobbyMusic.stop();
+            if (gameMusic) gameMusic.stop();
+        }
+        
+        async function toggleMusic() {
+            if (!audioContextStarted) await initAudio();
+            gameSettings.musicOn = !gameSettings.musicOn;
+            updateMusicButtonText();
+            if (!gameSettings.musicOn) {
+                stopAllMusic();
+            } else {
+                if (allDOMElements.lobbyModal.style.display === 'flex') {
+                    playLobbyMusic();
+                } else if (gameActive || hiddenStageActive) {
+                    playGameMusic();
+                }
+            }
+        }
+        
+        function updateMusicButtonText() {
+            const btn = allDOMElements.toggleMusicBtn;
+            if (btn) {
+                btn.textContent = `음악: ${gameSettings.musicOn ? '켜기' : '끄기'}`;
+            }
+        }
+
+        function toggleDarkMode() {
+            gameSettings.darkMode = !gameSettings.darkMode;
+            applyTheme(gameSettings.darkMode);
+            updateDarkModeButtonText();
+        }
+
+        function updateDarkModeButtonText() {
+            const btn = allDOMElements.toggleDarkModeBtn;
+            if(btn) {
+                btn.textContent = `테마: ${gameSettings.darkMode ? '다크' : '라이트'}`;
+            }
+        }
+        
+        // --- Event Listeners Setup ---
+        function setupEventListeners() {
+            // Lobby Buttons
+            document.getElementById('btn-play').onclick = () => showDifficultyModal(false);
+            document.getElementById('btn-practice').onclick = () => showDifficultyModal(true); 
+            document.getElementById('btn-tutorial').onclick = showTutorialFromLobby;
+            document.getElementById('btn-hidden-stage').onclick = startHiddenStage;
+            // Removed settings/achievements listeners
+
+            // Difficulty Modal Buttons
+            document.getElementById('btn-easy').onclick = () => selectDifficulty(DIFFICULTY.EASY);
+            document.getElementById('btn-normal').onclick = () => selectDifficulty(DIFFICULTY.NORMAL);
+            document.getElementById('btn-hard').onclick = () => selectDifficulty(DIFFICULTY.HARD);
+            document.getElementById('btn-difficulty-back').onclick = () => hideModal(allDOMElements.difficultyModal);
+
+            // Other Modals
+            document.getElementById('tutorial-close-button').onclick = () => hideModal(allDOMElements.tutorialModal);
+            document.getElementById('play-again-button').onclick = showLobby;
+            document.getElementById('main-menu-button').onclick = showLobby;
+            document.getElementById('hidden-main-menu-button').onclick = showLobby;
+            
+            // Settings buttons in lobby
+            allDOMElements.toggleDarkModeBtn.onclick = toggleDarkMode;
+            allDOMElements.toggleMusicBtn.onclick = toggleMusic; 
+            
+            // Mobile controls listeners
+            document.getElementById('btn-mobile-up').onclick = () => handleMoveInput(0, -1);
+            document.getElementById('btn-mobile-down').onclick = () => handleMoveInput(0, 1);
+            document.getElementById('btn-mobile-left').onclick = () => handleMoveInput(-1, 0);
+            document.getElementById('btn-mobile-right').onclick = () => handleMoveInput(1, 0);
+
+            // Keyboard listener
+            document.addEventListener('keydown', (e) => {
+                const isModalVisible = 
+                                    allDOMElements.lobbyModal.style.display === 'flex' ||
+                                    allDOMElements.tutorialModal.style.display === 'flex' ||
+                                    allDOMElements.difficultyModal.style.display === 'flex';
+                
+                const canAcceptInput = gameActive || hiddenStageActive;
+                
+                if (!canAcceptInput || isModalVisible) return; // Block input if a modal is up
+                
+                if (allDOMElements.gameoverModal.style.display === 'flex') {
+                    if(e.key === 'Enter') showLobby();
+                    return;
+                }
+                
+                if (gameActive) handleNormalGameInput(e.key);
+                else if (hiddenStageActive) handleHiddenStageInput(e.key);
+            });
+            
+            // Single click listener to init audio
+            document.body.addEventListener('click', initAudio, { once: true });
+        }
+
+        const isMobile = () => /Mobi/i.test(window.navigator.userAgent);
+        
+        function showModal(modal) { 
+            // Hide all modals
+            allDOMElements.lobbyModal.style.display = 'none';
+            allDOMElements.tutorialModal.style.display = 'none';
+            allDOMElements.difficultyModal.style.display = 'none';
+            allDOMElements.gameoverModal.style.display = 'none';
+            
+            if (modal) modal.style.display = 'flex'; 
+        }
+        
+        function hideModal(modal) { 
+            if (modal) modal.style.display = 'none'; 
+            allDOMElements.lobbyModal.style.display = 'flex';
+        }
+        
+        function disableLobbyButtons(disabled) {
+            // Re-query lobby buttons as they are not in allDOMElements
+            document.querySelectorAll('#lobby-modal .difficulty-buttons button').forEach(button => {
+                if(button) button.disabled = disabled; 
+            });
+       }
+
+        function showLobby() { 
+            gameActive = false; hiddenStageActive = false;
+            clearInterval(chaserInterval); clearInterval(hiddenTimeInterval);
+            
+            allDOMElements.gameContainer.style.display = 'none';
+            allDOMElements.hiddenContainer.style.display = 'none';
+            allDOMElements.mobileControls.style.display = 'none';
+            
+            showModal(allDOMElements.lobbyModal);
+            allDOMElements.mainTitle.style.display = 'block';
+
+            document.getElementById('btn-hidden-stage').style.display = hiddenStageUnlocked ? 'block' : 'none';
+            disableLobbyButtons(false); // Enable lobby buttons
+            
+            playLobbyMusic();
+        }
+
+        function showDifficultyModal(practice) {
+            isPracticeMode = practice;
+            document.getElementById('difficulty-modal-title').textContent = practice ? "연습 모드 난이도" : "난이도 선택";
+            showModal(allDOMElements.difficultyModal);
+        }
+
+        function selectDifficulty(difficulty) { 
+            currentDifficulty = { ...difficulty }; 
+            if (isPracticeMode) {
+                currentDifficulty.name = `연습 (${difficulty.name})`; 
+            }
+            startGame();
+        }
+
+        function showTutorialFromLobby() { 
+            showModal(allDOMElements.tutorialModal);
+        }
+
+        function startGame() { 
+            allDOMElements.tutorialModal.style.display = 'none';
+            allDOMElements.difficultyModal.style.display = 'none'; 
+            allDOMElements.gameContainer.style.display = 'flex';
+            allDOMElements.mainTitle.style.display = 'none';
+            if (isMobile()) allDOMElements.mobileControls.style.display = 'grid';
+            initializeGame();
+        }
+
+        function initializeGame() { 
+            currentFuel = currentDifficulty.fuel;
+            passengersCount = 0; totalMoves = 0; fuelItemsCollected = 0;
+            firstMoveTime = null;
+            pedestrianPositions = []; 
+            currentPath = []; 
+            taxiPos = { x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2) };
+            allDOMElements.difficultyDisplay.textContent = currentDifficulty.name;
+            allDOMElements.message.textContent = '';
+            
+            generateMap(); 
+            if (isPracticeMode) calculatePath(); 
+            
+            renderBoard(); 
+            updateHUD();
+            gameActive = true;
+            playGameMusic();
+        }
+        
+        // **REWRITTEN: Map generation logic**
+        function generateMap() {
+            board = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(ENTITY_TYPE.EMPTY));
+            
+            const startX = Math.floor(GRID_SIZE / 2);
+            const startY = Math.floor(GRID_SIZE / 2);
+            taxiPos = { x: startX, y: startY }; 
+
+            let availableCoords = [];
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    if (y !== startY || x !== startX) { 
+                        availableCoords.push({x, y});
+                    }
+                }
+            }
+            
+            availableCoords.sort(() => Math.random() - 0.5); 
+
+            // Function to safely place multiple entities
+            const placeEntities = (type, count, storageArray = null) => {
+                let placedCount = 0;
+                for (let i = 0; i < count; i++) {
+                    if (availableCoords.length === 0) {
+                        console.warn(`Ran out of space to place ${type}`);
+                        break;
+                    }
+                    const pos = availableCoords.pop(); 
+                    board[pos.y][pos.x] = type;
+                    if (storageArray) storageArray.push({x: pos.x, y: pos.y}); 
+                    placedCount++;
+                }
+            };
+
+            // --- 
+            // --- 
+            // --- BUG FIX: Place obstacles FIRST ---
+            // --- 
+            // --- 
+            
+            // 1. Place obstacles FIRST
+            placeEntities(ENTITY_TYPE.BUILDING, NUM_BUILDINGS, null); 
+            if (currentDifficulty.pedestrians) {
+                pedestrianPositions = []; 
+                placeEntities(ENTITY_TYPE.PEDESTRIAN, NUM_PEDESTRIANS, pedestrianPositions);
+            }
+            
+            // 'availableCoords' now contains ONLY empty cells
+
+            // 2. Find a VALID, REACHABLE spot for the passenger
+            passengerPos = null;
+            const obstacles = [ENTITY_TYPE.BUILDING, ENTITY_TYPE.PEDESTRIAN];
+            const range = currentDifficulty.passengerRange;
+            
+            let validPassengerSpots = [];
+            let otherReachableSpots = [];
+
+            // Iterate through all remaining empty spots to check reachability
+            for (const pos of availableCoords) {
+                // Run pathfinder to check reachability
+                const path = findPathBFS(taxiPos, pos, GRID_SIZE, board, obstacles);
+                
+                if (path !== null) { // If it's reachable...
+                    const dist = Math.abs(pos.x - taxiPos.x) + Math.abs(pos.y - taxiPos.y);
+                    // Check if it's within the difficulty's preferred range
+                    if (dist <= range) {
+                        validPassengerSpots.push(pos);
+                    } else {
+                        otherReachableSpots.push(pos);
+                    }
+                }
+                // If path === null, the spot is unreachable, so we ignore it.
+            }
+            
+            // 3. Prioritize spots within range
+            if (validPassengerSpots.length > 0) {
+                // Pick a random spot from the "good" list (in range)
+                passengerPos = validPassengerSpots[Math.floor(Math.random() * validPassengerSpots.length)];
+            } else if (otherReachableSpots.length > 0) {
+                // No spot in range, pick any reachable spot
+                console.warn("No reachable passenger spot found *within range*. Placing at any reachable spot.");
+                passengerPos = otherReachableSpots[Math.floor(Math.random() * otherReachableSpots.length)];
+            } else {
+                // No reachable spots AT ALL (taxi is boxed in)
+                console.error("FATAL: Taxi is completely boxed in by buildings. No reachable spot for passenger.");
+                // Fallback: just grab the first available coord, even if unreachable
+                if (availableCoords.length > 0) {
+                     passengerPos = availableCoords[0]; 
+                } else {
+                    // This should be impossible, but...
+                    passengerPos = {x: 0, y: 0}; 
+                    if (board[0][0] === ENTITY_TYPE.TAXI) passengerPos = {x: 1, y: 0};
+                }
+            }
+
+            // 4. Place the passenger and remove from availableCoords
+            if (passengerPos) {
+                board[passengerPos.y][passengerPos.x] = ENTITY_TYPE.PASSENGER;
+                const indexToRemove = availableCoords.findIndex(p => p.x === passengerPos.x && p.y === passengerPos.y);
+                if (indexToRemove > -1) {
+                    availableCoords.splice(indexToRemove, 1);
+                }
+            } else {
+                // Fallback if passengerPos is still null (shouldn't happen)
+                 if (availableCoords.length > 0) {
+                     passengerPos = availableCoords.splice(0, 1)[0];
+                     board[passengerPos.y][passengerPos.x] = ENTITY_TYPE.PASSENGER;
+                 } else {
+                     console.error("CRITICAL: No space left to place passenger!");
+                     board[0][0] = ENTITY_TYPE.PASSENGER;
+                     passengerPos = {x: 0, y: 0};
+                 }
+            }
+            
+            // (The old passenger placement logic has been removed)
+
+            // --- 
+            // --- END OF BUG FIX ---
+            // --- 
+
+            // --- NEW FUEL PLACEMENT LOGIC (from previous steps) ---
+            // 'availableCoords'는 이제 택시, 승객, 건물, 보행자를 제외한 모든 빈칸 목록입니다.
+            
+            const fuelToPlace = currentDifficulty.fuelItems;
+            let fuelPlaced = 0;
+
+            const TOO_CLOSE_DIST = 1; // 맨해튼 거리 1 (너무 가까움)
+            const NEAR_DIST_MAX = 4; // 맨해튼 거리 2, 3, 4 (가까움)
+
+            let nearSpots = [];
+            let otherSpots = [];
+
+            const MAX_NEAR_FUEL = 2; // 승객 근처에 배치할 최대 연료 수
+            let nearFuelPlaced = 0; // 승객 근처에 배치한 연료 수
+
+            // 1. 남은 빈칸들을 "가까운 곳"과 "다른 곳" 두 목록으로 분류합니다.
+            availableCoords.forEach(pos => {
+                const dist = Math.abs(pos.x - passengerPos.x) + Math.abs(pos.y - passengerPos.y);
+                if (dist > TOO_CLOSE_DIST && dist <= NEAR_DIST_MAX) {
+                    nearSpots.push(pos);
+                } else {
+                    otherSpots.push(pos);
+                }
+            });
+
+            // 2. 두 목록을 각각 무작위로 섞습니다.
+            nearSpots.sort(() => Math.random() - 0.5);
+            otherSpots.sort(() => Math.random() - 0.5);
+
+            // 3. "가까운 곳" 목록에서 먼저 연료를 배치합니다.
+            while (fuelPlaced < fuelToPlace && nearSpots.length > 0 && nearFuelPlaced < MAX_NEAR_FUEL) {
+                const pos = nearSpots.pop();
+                board[pos.y][pos.x] = ENTITY_TYPE.FUEL;
+                fuelPlaced++;
+                nearFuelPlaced++; // 근처에 배치한 카운트 증가
+            }
+
+            // 4. 아직 배치할 연료가 남았다면 "다른 곳" 목록에서 배치합니다.
+            while (fuelPlaced < fuelToPlace && otherSpots.length > 0) {
+                const pos = otherSpots.pop();
+                board[pos.y][pos.x] = ENTITY_TYPE.FUEL;
+                fuelPlaced++;
+            }
+            
+            // 5. 만약 모든 빈칸을 다 썼는데도 연료를 덜 배치했다면 경고를 출력합니다.
+            if (fuelPlaced < fuelToPlace) {
+                console.warn(`Could not place all ${fuelToPlace} fuel items. Only placed ${fuelPlaced}.`);
+            }
+            // --- END OF NEW FUEL PLACEMENT LOGIC ---
+            
+            // Finally, place the taxi
+            board[taxiPos.y][taxiPos.x] = ENTITY_TYPE.TAXI;
+        }
+        
+        function renderBoard() { 
+            allDOMElements.gameBoard.innerHTML = '';
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    const cellEntityType = board[y][x]; 
+                    
+                    if (cellEntityType) {
+                        cell.textContent = EMOJIS[cellEntityType] || ''; 
+                    } else {
+                        cell.textContent = EMOJIS.EMPTY;
+                    }
+
+                    cell.classList.remove('path'); 
+                    if (isPracticeMode && currentPath && currentPath.length > 0 && currentPath.some(p => p.x === x && p.y === y)) {
+                        if (cellEntityType !== ENTITY_TYPE.TAXI && cellEntityType !== ENTITY_TYPE.PASSENGER) {
+                            cell.classList.add('path');
+                        }
+                    }
+
+                    allDOMElements.gameBoard.appendChild(cell);
+                }
+            }
+        }
+
+        function updateHUD() { 
+            allDOMElements.fuelDisplay.textContent = currentFuel;
+            allDOMElements.passengerDisplay.textContent = passengersCount;
+            allDOMElements.movesDisplay.textContent = totalMoves;
+        }
+
+        function handleMoveInput(dx, dy) { 
+            if (gameActive) moveTaxi(dx, dy);
+            else if (hiddenStageActive) moveHiddenTaxi(dx, dy);
+        }
+        
+        function handleNormalGameInput(key) { 
+             const lowerKey = key.toLowerCase();
+             // Combined WASD and Arrow Keys
+             if (lowerKey === 'w' || lowerKey === 'arrowup') handleMoveInput(0, -1);
+             else if (lowerKey === 's' || lowerKey === 'arrowdown') handleMoveInput(0, 1);
+             else if (lowerKey === 'a' || lowerKey === 'arrowleft') handleMoveInput(-1, 0);
+             else if (lowerKey === 'd' || lowerKey === 'arrowright') handleMoveInput(1, 0);
+        }
+        
+        function movePedestrians() { 
+            let currentPedPositions = [];
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    if (board[y][x] === ENTITY_TYPE.PEDESTRIAN) currentPedPositions.push({x, y});
+                }
+            }
+            
+            currentPedPositions.sort(() => Math.random() - 0.5); 
+
+            currentPedPositions.forEach(pos => {
+                if (board[pos.y][pos.x] !== ENTITY_TYPE.PEDESTRIAN) return;
+
+                const possibleMoves = [];
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const newX = pos.x + dx, newY = pos.y + dy;
+                        if (newX >= 0 && newX < GRID_SIZE && newY >= 0 && newY < GRID_SIZE && 
+                            board[newY][newX] === ENTITY_TYPE.EMPTY) {
+                            possibleMoves.push({x: newX, y: newY});
+                        }
+                    }
+                }
+                if (possibleMoves.length > 0) {
+                    const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                    board[pos.y][pos.x] = ENTITY_TYPE.EMPTY;
+                    board[move.y][move.x] = ENTITY_TYPE.PEDESTRIAN;
+                }
+            });
+        }
+        
+        function moveTaxi(dx, dy) { 
+            if (!gameActive || currentFuel <= 0) return; 
+            if (!firstMoveTime) firstMoveTime = Date.now();
+            const newX = taxiPos.x + dx, newY = taxiPos.y + dy;
+            if (newX < 0 || newX >= GRID_SIZE || newY < 0 || newY >= GRID_SIZE) {
+                allDOMElements.message.textContent = '벽에 부딪혔습니다!'; 
+                playSfx('bump');
+                return;
+            }
+            
+            // --- 수정된 부분 (from previous step) ---
+            const destination = board[newY][newX];
+
+            // 1. 건물과 충돌
+            if (destination === ENTITY_TYPE.BUILDING) {
+                allDOMElements.message.textContent = '통과할 수 없습니다!'; 
+                playSfx('bump');
+                return; // 이동 안 함, 연료 소모 없음
+            }
+
+            // 2. 보행자와 충돌 (페널티)
+            if (destination === ENTITY_TYPE.PEDESTRIAN) {
+                allDOMElements.message.textContent = '보행자 주의! (연료 -1)'; 
+                playSfx('bump');
+                
+                currentFuel--; // 페널티로 연료 1 소모
+                totalMoves++; // 이동 시도로 간주
+                
+                updateHUD(); // HUD 업데이트
+
+                if (currentFuel <= 0) {
+                    gameOver('연료 고갈!');
+                }
+                
+                return; // 이동 안 함
+            }
+            // --- 수정 끝 ---
+
+
+            playSfx('move');
+            board[taxiPos.y][taxiPos.x] = ENTITY_TYPE.EMPTY;
+            taxiPos = { x: newX, y: newY };
+            currentFuel--; totalMoves++; allDOMElements.message.textContent = '';
+            let shouldGenerateNewMap = false;
+
+            if (destination === ENTITY_TYPE.PASSENGER) {
+                playSfx('pickup');
+                passengersCount++; 
+                // if (!isPracticeMode) playerData.totalPassengers++; // Removed
+                allDOMElements.message.textContent = `승객 ${passengersCount}명 탑승!`;
+                // Removed achievement checks
+                shouldGenerateNewMap = true;
+            } else if (destination === ENTITY_TYPE.FUEL) {
+                playSfx('fuel');
+                currentFuel += FUEL_REFILL_AMOUNT; fuelItemsCollected++;
+                allDOMElements.message.textContent = `연료 +${FUEL_REFILL_AMOUNT} 회복!`;
+            } 
+            
+            board[taxiPos.y][taxiPos.x] = ENTITY_TYPE.TAXI;
+            
+            if (currentDifficulty.pedestrians) {
+                movePedestrians();
+                if(board[taxiPos.y][taxiPos.x] !== ENTITY_TYPE.TAXI) {
+                     board[taxiPos.y][taxiPos.x] = ENTITY_TYPE.TAXI;
+                }
+            }
+
+            if(shouldGenerateNewMap) { 
+                generateMap(); 
+            }
+            
+            if (isPracticeMode) calculatePath(); 
+            renderBoard(); updateHUD();
+
+            if (currentFuel <= 0) {
+                 // Removed achievement check
+                gameOver('연료 고갈!');
+            }
+        }
+
+        function gameOver(reason) { 
+            gameActive = false;
+            stopAllMusic(); 
+            playLobbyMusic(); 
+            playSfx('gameOver');
+            document.getElementById('gameover-title').textContent = reason;
+            calculateGrade();
+            // Removed saveGameData()
+            showModal(allDOMElements.gameoverModal);
+        }
+
+        // --- 
+        // --- THIS IS THE (PREVIOUSLY) UPDATED FUNCTION ---
+        // --- (No changes here, this is the correct version)
+        // --- 
+        function calculateGrade() { 
+            if (isPracticeMode) { 
+                if (passengersCount === 0) {
+                    allDOMElements.gradeDisplay.textContent = "연습";
+                    allDOMElements.gradeText.textContent = "연습 완료!";
+                    allDOMElements.gradeDetails.innerHTML = `• 태운 승객: 0명`;
+                    return;
+                }
+                const movesPerPassenger = totalMoves > 0 ? (totalMoves / passengersCount).toFixed(1) : 0;
+                allDOMElements.gradeDisplay.textContent = "연습";
+                allDOMElements.gradeText.textContent = "연습 완료!";
+                allDOMElements.gradeDetails.innerHTML = `• <strong>태운 승객</strong>: ${passengersCount}명<br> • <strong>이동 효율</strong>: 승객당 ${movesPerPassenger}회 이동<br> • <strong>연료템 사용</strong>: ${fuelItemsCollected}개`;
+                return;
+            }
+
+            // --- Real Grade Calculation (if not practice mode) ---
+            if (passengersCount === 0) {
+                allDOMElements.gradeDisplay.textContent = "☆☆☆☆☆";
+                allDOMElements.gradeText.textContent = "다음엔 꼭 승객을 태워보세요!";
+                allDOMElements.gradeDetails.innerHTML = `• 태운 승객: 0명`;
+                return;
+            }
+
+            // 1. [버그 수정] 비교를 위해 순수한 '숫자'로 먼저 계산합니다.
+            const movesPerPassenger_Num = (passengersCount > 0) ? (totalMoves / passengersCount) : 0;
+            
+            // 2. [로직 수정] 별점을 0에서부터 누적하는 방식으로 변경 (더 명확함)
+            let totalStars = 0;
+            if (passengersCount >= 1) totalStars = 1;
+            if (passengersCount >= 3) totalStars = 2;
+            if (passengersCount >= 6) totalStars = 3;
+            
+            // [버그 수정] 'movesPerPassenger_Num' (숫자)로 비교
+            if (passengersCount >= 10 && movesPerPassenger_Num < 12) totalStars = 4;
+            
+            // 3. [요청 사항] 5성 조건에서 'fuelItemsCollected === 0' 제거
+            if (currentDifficulty.name === DIFFICULTY.HARD.name && 
+                passengersCount >= 15 && 
+                movesPerPassenger_Num < 8) { //
+                totalStars = 5;
+            }
+
+            const starString = '★'.repeat(totalStars) + '☆'.repeat(5 - totalStars);
+            
+            if(totalStars >= 5) {
+                if (!hiddenStageUnlocked) {
+                    hiddenStageUnlocked = true;
+                    
+                    // playSfx('achievement'); // 'achievement'가 sfx 객체에 정의되지 않아 오류 발생 가능
+                    
+                    const toast = document.createElement('div');
+                    // (임시 스타일링: CSS가 없어도 보이도록)
+                    toast.style.cssText = `
+                        position: fixed;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        bottom: 20px;
+                        background-color: #6f42c1;
+                        color: white;
+                        padding: 15px 25px;
+                        border-radius: 10px;
+                        font-weight: bold;
+                        z-index: 2000;
+                        opacity: 0;
+                        transition: opacity 0.5s, bottom 0.5s;
+                    `;
+                    
+                    toast.textContent = "✨ 히든 스테이지가 해금되었습니다! ✨";
+                    document.body.appendChild(toast);
+                    setTimeout(() => {
+                        toast.style.opacity = '1';
+                        toast.style.bottom = '40px';
+                    }, 100);
+                    setTimeout(() => {
+                        toast.style.opacity = '0';
+                        toast.style.bottom = '20px';
+                        setTimeout(() => toast.remove(), 500);
+                    }, 3000);
+                }
+            }
+            
+            let title = "";
+            switch(totalStars) {
+                case 5: title = "전설의 베스트 드라이버!"; break;
+                case 4: title = "환상적인 택시 운전사!"; break;
+                case 3: title = "훌륭한 베테랑 기사님!"; break;
+                case 2: title = "성장하는 모범 기사님!"; break;
+                case 1: title = "이제 막 시작하는 신입!"; break;
+                default: title = "다시 도전해보세요!";
+            }
+            
+            // 4. [버그 수정] 화면에는 .toFixed(1)이 적용된 '문자열'을 사용
+            const movesPerPassenger_Display = movesPerPassenger_Num.toFixed(1);
+            
+            allDOMElements.gradeDisplay.textContent = starString; 
+            allDOMElements.gradeText.textContent = title;
+            allDOMElements.gradeDetails.innerHTML = `• <strong>태운 승객</strong>: ${passengersCount}명<br> • <strong>이동 효율</strong>: 승객당 ${movesPerPassenger_Display}회 이동<br> • <strong>연료템 사용</strong>: ${fuelItemsCollected}개`;
+        }
+        
+        function showAchievements() { 
+            alert("로그인/저장 기능이 제거되어 도전과제를 이용할 수 없습니다.");
+        }
+        
+        function applyTheme(isDarkMode) { 
+             document.body.classList.toggle('dark-mode', isDarkMode);
+        }
+
+        function showSettings() { 
+            alert("로그인/저장 기능이 제거되어 설정을 이용할 수 없습니다.");
+        }
+        
+        function saveAndCloseSettings() { 
+            hideModal(allDOMElements.settingsModal);
+        }
+        
+        // --- Hidden Stage Functions ---
+        function startHiddenStage() { 
+             allDOMElements.lobbyModal.style.display = 'none';
+            allDOMElements.hiddenContainer.style.display = 'flex';
+            if (isMobile()) allDOMElements.mobileControls.style.display = 'grid';
+            allDOMElements.mainTitle.style.display = 'none';
+            initializeHiddenStage();
+        }
+        function initializeHiddenStage() { 
+            for(let y=0; y<HIDDEN_MAP.length; y++) for(let x=0; x<HIDDEN_MAP[y].length; x++) {
+                if (HIDDEN_MAP[y][x] === 'S') playerHiddenPos = {x, y}; 
+                if (HIDDEN_MAP[y][x] === 'C') chaserPos = {x, y};
+            }
+            hiddenTimeLeft = 60; document.getElementById('time-display').textContent = hiddenTimeLeft;
+            renderHiddenStage(); hiddenStageActive = true;
+            playGameMusic(); 
+            chaserInterval = setInterval(moveChaser, 1000);
+            hiddenTimeInterval = setInterval(() => {
+                if(!hiddenStageActive) return; 
+                hiddenTimeLeft--; 
+                document.getElementById('time-display').textContent = hiddenTimeLeft;
+                if (hiddenTimeLeft <= 0) gameOverHidden('시간 초과!');
+            }, 1000);
+        }
+        function renderHiddenStage() { 
+            allDOMElements.hiddenBoard.innerHTML = '';
+            for(let y=0; y<HIDDEN_GRID_SIZE; y++) for(let x=0; x<HIDDEN_GRID_SIZE; x++) {
+                const cell = document.createElement('div'); cell.classList.add('hidden-cell');
+                const tile = HIDDEN_MAP[y][x];
+                if (tile === '#') {
+                    cell.classList.add('wall'); 
+                    cell.textContent = EMOJIS.WALL; 
+                } else if (tile === 'X') {
+                    cell.textContent = EMOJIS.EXIT;
+                }
+                
+                if (x === chaserPos.x && y === chaserPos.y) {
+                    cell.textContent = EMOJIS.CHASER;
+                }
+                if (x === playerHiddenPos.x && y === playerHiddenPos.y) {
+                    cell.textContent = EMOJIS.TAXI; 
+                }
+                allDOMElements.hiddenBoard.appendChild(cell);
+            }
+        }
+        function handleHiddenStageInput(key) { 
+            const lowerKey = key.toLowerCase();
+            if (lowerKey === 'w' || lowerKey === 'arrowup') handleMoveInput(0, -1);
+            else if (lowerKey === 's' || lowerKey === 'arrowdown') handleMoveInput(0, 1);
+            else if (lowerKey === 'a' || lowerKey === 'arrowleft') handleMoveInput(-1, 0);
+            else if (lowerKey === 'd' || lowerKey === 'arrowright') handleMoveInput(1, 0);
+        }
+        function moveHiddenTaxi(dx, dy){ 
+            if(!hiddenStageActive) return;
+            const newX = playerHiddenPos.x + dx, newY = playerHiddenPos.y + dy;
+            if (newY >=0 && newY < HIDDEN_GRID_SIZE && newX >=0 && newX < HIDDEN_GRID_SIZE && HIDDEN_MAP[newY][newX] !== '#') {
+                playSfx('move'); 
+                playerHiddenPos = {x: newX, y: newY};
+                renderHiddenStage(); 
+                checkHiddenStageConditions(); 
+            } else {
+                 playSfx('bump'); 
+            }
+        }
+        function moveChaser() { 
+             if(!hiddenStageActive) return;
+             const path = findPathBFS(chaserPos, playerHiddenPos, HIDDEN_GRID_SIZE, HIDDEN_MAP.map(row => row.split('')), ['#']);
+            if (path && path.length > 0) {
+                chaserPos = path.shift() || chaserPos; 
+                if (path.length > 0) { 
+                    chaserPos = path.shift(); 
+                }
+            }
+            renderHiddenStage(); 
+            checkHiddenStageConditions(); 
+        }
+        function checkHiddenStageConditions() { 
+             if (playerHiddenPos.x === chaserPos.x && playerHiddenPos.y === chaserPos.y) {
+                 gameOverHidden('추격자에게 잡혔습니다!');
+             }
+            if(HIDDEN_MAP[playerHiddenPos.y][playerHiddenPos.x] === 'X') {
+                gameOverHidden('탈출 성공!', true);
+            }
+        }
+        function gameOverHidden(reason, isWin = false) { 
+             if (!hiddenStageActive) return;
+            hiddenStageActive = false;
+            stopAllMusic(); 
+            playLobbyMusic(); 
+            clearInterval(chaserInterval); clearInterval(hiddenTimeInterval);
+            
+            if (isWin) { 
+                playSfx('win');
+            } else {
+                playSfx('gameOver');
+            }
+            
+            document.getElementById('gameover-title').textContent = reason;
+            allDOMElements.gradeDisplay.textContent = isWin ? "🎉🎉🎉" : "😥";
+            allDOMElements.gradeText.textContent = isWin ? "당신은 진정한 추격의 달인!" : "조금만 더 힘내세요!";
+            allDOMElements.gradeDetails.innerHTML = isWin ? `• 비밀 스테이지 클리어!` : `• 아쉽게 탈출에 실패했습니다.`;
+            showModal(allDOMElements.gameoverModal);
+        }
+        
+        // --- 
+        // --- 
+        // --- THIS IS THE START OF THE MODIFICATIONS ---
+        // --- 
+        // --- 
+        
+        // (이 함수(findPathBFS)는 히든 스테이지의 추격자 AI가 사용하므로 수정하지 않습니다)
+        // (또한 generateMap의 버그 수정에도 사용됩니다)
+        function findPathBFS(start, end, size, mapData, obstacles) { 
+            const queue = [{ ...start, path: [] }], visited = new Set([`${start.x},${start.y}`]);
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; 
+
+            while (queue.length > 0) {
+                const { x, y, path } = queue.shift();
+                if (x === end.x && y === end.y) return path;
+                for (const [dx, dy] of directions) {
+                    const newX = x + dx, newY = y + dy;
+                    if (newX < 0 || newX >= size || newY < 0 || newY >= size) continue; 
+
+                    const key = `${newX},${newY}`;
+                    const tile = Array.isArray(mapData[0]) ? mapData[newY][newX] : mapData[newY].charAt(newX); 
+                    
+                    if (!obstacles.includes(tile) && !visited.has(key)) {
+                        visited.add(key); 
+                        queue.push({ x: newX, y: newY, path: [...path, {x: newX, y: newY}] });
+                    }
+                }
+            }
+            return null; // No path found
+        }
+        
+        // --- NEW FUNCTION ADDED (from previous step) ---
+        // 연료를 우선시하는 Dijkstra 기반 경로 탐색기
+        function findFuelPathDijkstra(start, end, size, mapData, obstacles) {
+            // 우선순위 큐: { x, y, cost, path: [] }
+            // 간단한 배열을 정렬하여 우선순위 큐를 시뮬레이션합니다.
+            const priorityQueue = [{ ...start, cost: 0, path: [] }];
+            
+            // 각 셀에 도달하는 데 드는 최소 비용을 저장합니다: Key "x,y", Value: cost
+            const costs = new Map();
+            costs.set(`${start.x},${start.y}`, 0);
+
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+
+            while (priorityQueue.length > 0) {
+                // 비용순으로 정렬하여 가장 우선순위가 높은(비용이 낮은) 항목을 가져옵니다.
+                priorityQueue.sort((a, b) => a.cost - b.cost);
+                const { x, y, cost, path } = priorityQueue.shift(); // Get lowest cost node
+
+                // 목적지 도착
+                if (x === end.x && y === end.y) {
+                    return path; 
+                }
+
+                // 이미 더 저렴한 경로로 이 노드를 방문했다면 건너뜁니다.
+                if (cost > (costs.get(`${x},${y}`) || Infinity)) {
+                    continue;
+                }
+
+                // 이웃 노드 확인
+                for (const [dx, dy] of directions) {
+                    const newX = x + dx, newY = y + dy;
+
+                    // 경계 확인
+                    if (newX < 0 || newX >= size || newY < 0 || newY >= size) continue; 
+
+                    const key = `${newX},${newY}`;
+                    const tile = Array.isArray(mapData[0]) ? mapData[newY][newX] : mapData[newY].charAt(newX); 
+                    
+                    // 장애물 확인
+                    if (obstacles.includes(tile)) continue;
+
+                    // --- 핵심 로직 ---
+                    // 이동 비용을 할당합니다.
+                    // 연료 셀은 이동 비용이 훨씬 저렴합니다.
+                    let moveCost;
+                    if (tile === ENTITY_TYPE.FUEL) {
+                        // 연료 우선: 일반 이동 비용의 1/10로 설정합니다.
+                        // 즉, 알고리즘은 1개의 연료 항목을 얻기 위해
+                        // 최대 9칸까지 "돌아갈" 의향이 생깁니다.
+                        moveCost = 0.1; 
+                    } else {
+                        moveCost = 1; // 일반 이동 비용
+                    }
+                    // --- 핵심 로직 끝 ---
+                    
+                    const newCost = cost + moveCost;
+
+                    // 이 새로운 경로가 해당 셀의 이전 경로보다 저렴하다면...
+                    if (newCost < (costs.get(key) || Infinity)) {
+                        costs.set(key, newCost); // 새로운 최저 비용 기록
+                        const newPath = [...path, {x: newX, y: newY}];
+                        priorityQueue.push({ x: newX, y: newY, cost: newCost, path: newPath });
+                    }
+                }
+            }
+            
+            return null; // No path found
+        }
+        // --- END OF NEW FUNCTION ---
+        
+        // --- THIS FUNCTION IS MODIFIED (from previous step) ---
+        function calculatePath() {
+            if (!passengerPos) { 
+                currentPath = [];
+                return;
+            }
+            const obstacles = [ENTITY_TYPE.BUILDING, ENTITY_TYPE.PEDESTRIAN];
+            
+            // --- MODIFICATION ---
+            // 기존: const path = findPathBFS(taxiPos, passengerPos, GRID_SIZE, board, obstacles);
+            // 변경:
+            const path = findFuelPathDijkstra(taxiPos, passengerPos, GRID_SIZE, board, obstacles);
+            // --- END MODIFICATION ---
+            
+            currentPath = path || [];
+        }
+        // --- 
+        // --- 
+        // --- END OF MODIFICATIONS ---
+        // --- 
+        // --- 
+
+
+        // --- Game Initialization ---
+        async function initializeAppSequence() {
+             setupEventListeners(); 
+             
+             // 튜토리얼 모달의 별점 기준도 수정합니다.
+             document.getElementById('grade-details-tutorial').innerHTML = `
+                <strong>⭐ 별점 기준 (연습 모드 제외)</strong><br>
+                ★☆☆☆☆: 승객 1명 이상<br>
+                ★★☆☆☆: 승객 3명 이상<br>
+                ★★★☆☆: 승객 6명 이상<br>
+                ★★★★☆: 승객 10명 이상 & 승객당 이동 12회 미만<br>
+                ★★★★★: (하드 모드) 승객 15명 이상 & 승객당 이동 8회 미만
+             `;
+             
+             // 튜토리얼 모달의 보행자 설명도 수정합니다.
+             document.querySelector('#tutorial-modal ul li:nth-child(5)').innerHTML = `<span>👤</span><strong>보행자</strong>: 충돌 시 연료 -1 (노말/하드)`;
+
+             // Simplified startup: Just show the lobby
+             showLobby();
+             disableLobbyButtons(false); // Enable buttons immediately
+             
+             // Try to init audio context gently
+             initAudio();
+        }
+
+        initializeAppSequence(); 
+
+    </script>
+</body>
+</html>
