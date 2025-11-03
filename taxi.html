@@ -28,7 +28,7 @@
             --background-color: #1a1a1a;
             --panel-background: #2c3e50;
             --board-background: #34495e;
-            --path-color: #2a4b3d;
+            --path-color: #34D399; /* 다크모드용 밝은 경로 색상 */
         }
 
         body {
@@ -107,6 +107,12 @@
         .cell.path {
             background-color: var(--path-color);
         }
+
+        /* --- 다크 모드 경로 표시 버그 수정 --- */
+        body.dark-mode .cell.path {
+            background-color: var(--path-color); /* 다크 모드에서도 경로 색상이 적용되도록 우선순위를 높입니다 */
+        }
+        /* --- 수정 끝 --- */
 
          .hidden-cell { 
             width: var(--hidden-cell-size); 
@@ -289,15 +295,14 @@
             <li><span style="background-color: var(--path-color); border: 1px solid #999; border-radius: 4px; padding: 0 4px;">&nbsp;</span><strong>경로</strong>: 연습 모드에서만 표시</li> 
         </ul> 
         <p>방향키(↑ ↓ ← →) 또는 WASD로 승객을 태우세요. 연료가 0이 되면 게임 오버!</p>
+        <!-- 튜토리얼의 별점 기준 (ID 수정 및 내용 수정됨) -->
         <div id="grade-details-tutorial" style="background-color: var(--board-background); margin-top: 20px; font-size: 0.9em; color: #666; text-align: left; padding: 10px; border-radius: 8px;">
-            <!-- 원본 코드의 'grade-details' ID가 중복되어 'grade-details-tutorial'로 변경 -->
             <strong>⭐ 별점 기준 (연습 모드 제외)</strong><br>
             ★☆☆☆☆: 승객 1명 이상<br>
             ★★☆☆☆: 승객 3명 이상<br>
             ★★★☆☆: 승객 6명 이상<br>
             ★★★★☆: 승객 10명 이상 & 승객당 이동 12회 미만<br>
             ★★★★★: (하드 모드) 승객 15명 이상 & 승객당 이동 8회 미만
-            <!-- 5성 조건에서 연료템 조건이 제거되었습니다 -->
         </div>
         <button id="tutorial-close-button">닫기</button> 
     </div> </div>
@@ -314,11 +319,13 @@
         const NUM_BUILDINGS = 15;
         const NUM_PEDESTRIANS = 3;
 
+        // --- 수정됨: 연료 아이템 수량 변경 ---
         const DIFFICULTY = {
-            EASY: { name: '이지', fuel: 25, pedestrians: false, fuelItems: 8, passengerRange: 2 }, // 6 -> 8
-            NORMAL: { name: '노말', fuel: 20, pedestrians: true, fuelItems: 6, passengerRange: 3 }, // 4 -> 6
-            HARD: { name: '하드', fuel: 15, pedestrians: true, fuelItems: 5, passengerRange: 10 }, // 3 -> 5
+            EASY: { name: '이지', fuel: 25, pedestrians: false, fuelItems: 8, passengerRange: 2 },
+            NORMAL: { name: '노말', fuel: 20, pedestrians: true, fuelItems: 6, passengerRange: 3 },
+            HARD: { name: '하드', fuel: 15, pedestrians: true, fuelItems: 5, passengerRange: 10 },
         };
+        // --- 수정 끝 ---
         
         const EMOJIS = { 
             TAXI: '🚖', PASSENGER: '🧍', FUEL: '⛽',
@@ -331,8 +338,6 @@
             BUILDING: 'BUILDING', PEDESTRIAN: 'PEDESTRIAN',
             EMPTY: null, CHASER: 'CHASER', EXIT: 'EXIT', WALL: 'WALL',
         };
-        
-        // (Achievement list removed as it's no longer a tracked system)
         
         // --- Game State ---
         let board = [], taxiPos = { x: 0, y: 0 }, passengerPos = { x: 0, y: 0 };
@@ -520,7 +525,6 @@
             document.getElementById('btn-practice').onclick = () => showDifficultyModal(true); 
             document.getElementById('btn-tutorial').onclick = showTutorialFromLobby;
             document.getElementById('btn-hidden-stage').onclick = startHiddenStage;
-            // Removed settings/achievements listeners
 
             // Difficulty Modal Buttons
             document.getElementById('btn-easy').onclick = () => selectDifficulty(DIFFICULTY.EASY);
@@ -586,7 +590,7 @@
         }
         
         function disableLobbyButtons(disabled) {
-            // Re-query lobby buttons as they are not in allDOMElements
+            // Re-query lobby buttons
             document.querySelectorAll('#lobby-modal .difficulty-buttons button').forEach(button => {
                 if(button) button.disabled = disabled; 
             });
@@ -655,7 +659,9 @@
             playGameMusic();
         }
         
-        // **REWRITTEN: Map generation logic**
+        // ---
+        // --- 수정됨: 승객 갇힘 버그 해결을 위해 맵 생성 로직 전체 수정 ---
+        // ---
         function generateMap() {
             board = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(ENTITY_TYPE.EMPTY));
             
@@ -689,22 +695,16 @@
                 }
             };
 
-            // --- 
-            // --- 
-            // --- BUG FIX: Place obstacles FIRST ---
-            // --- 
-            // --- 
-            
-            // 1. Place obstacles FIRST
+            // 1. 장애물(건물, 보행자)을 먼저 배치합니다.
             placeEntities(ENTITY_TYPE.BUILDING, NUM_BUILDINGS, null); 
             if (currentDifficulty.pedestrians) {
                 pedestrianPositions = []; 
                 placeEntities(ENTITY_TYPE.PEDESTRIAN, NUM_PEDESTRIANS, pedestrianPositions);
             }
             
-            // 'availableCoords' now contains ONLY empty cells
+            // 'availableCoords'는 이제 장애물을 제외한 빈 칸 목록입니다.
 
-            // 2. Find a VALID, REACHABLE spot for the passenger
+            // 2. 택시가 도달할 수 있는 유효한 승객 위치를 찾습니다.
             passengerPos = null;
             const obstacles = [ENTITY_TYPE.BUILDING, ENTITY_TYPE.PEDESTRIAN];
             const range = currentDifficulty.passengerRange;
@@ -712,85 +712,62 @@
             let validPassengerSpots = [];
             let otherReachableSpots = [];
 
-            // Iterate through all remaining empty spots to check reachability
+            // 모든 남은 빈 칸을 순회하며 도달 가능성 검사
             for (const pos of availableCoords) {
-                // Run pathfinder to check reachability
                 const path = findPathBFS(taxiPos, pos, GRID_SIZE, board, obstacles);
                 
-                if (path !== null) { // If it's reachable...
+                if (path !== null) { // 도달 가능!
                     const dist = Math.abs(pos.x - taxiPos.x) + Math.abs(pos.y - taxiPos.y);
-                    // Check if it's within the difficulty's preferred range
                     if (dist <= range) {
-                        validPassengerSpots.push(pos);
+                        validPassengerSpots.push(pos); // 선호 범위 내
                     } else {
-                        otherReachableSpots.push(pos);
+                        otherReachableSpots.push(pos); // 범위 밖 (하지만 도달은 가능)
                     }
                 }
-                // If path === null, the spot is unreachable, so we ignore it.
+                // path === null 이면 도달 불가능한(갇힌) 곳이므로 무시합니다.
             }
             
-            // 3. Prioritize spots within range
+            // 3. 승객 위치를 확정합니다 (선호 범위 내 > 범위 밖)
             if (validPassengerSpots.length > 0) {
-                // Pick a random spot from the "good" list (in range)
                 passengerPos = validPassengerSpots[Math.floor(Math.random() * validPassengerSpots.length)];
             } else if (otherReachableSpots.length > 0) {
-                // No spot in range, pick any reachable spot
-                console.warn("No reachable passenger spot found *within range*. Placing at any reachable spot.");
+                console.warn("선호 범위 내에 도달 가능한 승객 위치가 없습니다. 범위 밖 위치에 배치합니다.");
                 passengerPos = otherReachableSpots[Math.floor(Math.random() * otherReachableSpots.length)];
             } else {
-                // No reachable spots AT ALL (taxi is boxed in)
-                console.error("FATAL: Taxi is completely boxed in by buildings. No reachable spot for passenger.");
-                // Fallback: just grab the first available coord, even if unreachable
+                console.error("치명적 오류: 택시가 완전히 갇혔습니다. 도달 가능한 승객 위치가 없습니다.");
                 if (availableCoords.length > 0) {
-                     passengerPos = availableCoords[0]; 
+                     passengerPos = availableCoords[0]; // 비상책: 그냥 아무데나 배치
                 } else {
-                    // This should be impossible, but...
                     passengerPos = {x: 0, y: 0}; 
-                    if (board[0][0] === ENTITY_TYPE.TAXI) passengerPos = {x: 1, y: 0};
+                    if (taxiPos.x === 0 && taxiPos.y === 0) passengerPos = {x: 1, y: 0};
                 }
             }
 
-            // 4. Place the passenger and remove from availableCoords
+            // 4. 승객을 배치하고 'availableCoords' 목록에서 제거합니다.
             if (passengerPos) {
                 board[passengerPos.y][passengerPos.x] = ENTITY_TYPE.PASSENGER;
                 const indexToRemove = availableCoords.findIndex(p => p.x === passengerPos.x && p.y === passengerPos.y);
                 if (indexToRemove > -1) {
                     availableCoords.splice(indexToRemove, 1);
                 }
-            } else {
-                // Fallback if passengerPos is still null (shouldn't happen)
-                 if (availableCoords.length > 0) {
-                     passengerPos = availableCoords.splice(0, 1)[0];
-                     board[passengerPos.y][passengerPos.x] = ENTITY_TYPE.PASSENGER;
-                 } else {
-                     console.error("CRITICAL: No space left to place passenger!");
-                     board[0][0] = ENTITY_TYPE.PASSENGER;
-                     passengerPos = {x: 0, y: 0};
-                 }
             }
             
-            // (The old passenger placement logic has been removed)
+            // 'availableCoords'는 이제 택시, 장애물, 승객을 제외한 모든 빈칸 목록입니다.
 
-            // --- 
-            // --- END OF BUG FIX ---
-            // --- 
-
-            // --- NEW FUEL PLACEMENT LOGIC (from previous steps) ---
-            // 'availableCoords'는 이제 택시, 승객, 건물, 보행자를 제외한 모든 빈칸 목록입니다.
-            
+            // 5. 연료를 배치합니다 (승객 근처 최대 2개, 나머지는 무작위)
             const fuelToPlace = currentDifficulty.fuelItems;
             let fuelPlaced = 0;
 
             const TOO_CLOSE_DIST = 1; // 맨해튼 거리 1 (너무 가까움)
-            const NEAR_DIST_MAX = 4; // 맨해튼 거리 2, 3, 4 (가까움)
+            const NEAR_DIST_MAX = 4;  // 맨해튼 거리 2, 3, 4 (가까움)
 
             let nearSpots = [];
             let otherSpots = [];
 
             const MAX_NEAR_FUEL = 2; // 승객 근처에 배치할 최대 연료 수
-            let nearFuelPlaced = 0; // 승객 근처에 배치한 연료 수
+            let nearFuelPlaced = 0;  // 승객 근처에 배치한 연료 수
 
-            // 1. 남은 빈칸들을 "가까운 곳"과 "다른 곳" 두 목록으로 분류합니다.
+            // 5a. 남은 빈칸들을 "가까운 곳"과 "다른 곳"으로 분류
             availableCoords.forEach(pos => {
                 const dist = Math.abs(pos.x - passengerPos.x) + Math.abs(pos.y - passengerPos.y);
                 if (dist > TOO_CLOSE_DIST && dist <= NEAR_DIST_MAX) {
@@ -800,34 +777,40 @@
                 }
             });
 
-            // 2. 두 목록을 각각 무작위로 섞습니다.
+            // 5b. 두 목록을 섞음
             nearSpots.sort(() => Math.random() - 0.5);
             otherSpots.sort(() => Math.random() - 0.5);
 
-            // 3. "가까운 곳" 목록에서 먼저 연료를 배치합니다.
+            // 5c. "가까운 곳"에 먼저 최대 2개 배치
             while (fuelPlaced < fuelToPlace && nearSpots.length > 0 && nearFuelPlaced < MAX_NEAR_FUEL) {
                 const pos = nearSpots.pop();
                 board[pos.y][pos.x] = ENTITY_TYPE.FUEL;
                 fuelPlaced++;
-                nearFuelPlaced++; // 근처에 배치한 카운트 증가
+                nearFuelPlaced++;
             }
 
-            // 4. 아직 배치할 연료가 남았다면 "다른 곳" 목록에서 배치합니다.
+            // 5d. "다른 곳"에 나머지 배치
             while (fuelPlaced < fuelToPlace && otherSpots.length > 0) {
                 const pos = otherSpots.pop();
                 board[pos.y][pos.x] = ENTITY_TYPE.FUEL;
                 fuelPlaced++;
             }
             
-            // 5. 만약 모든 빈칸을 다 썼는데도 연료를 덜 배치했다면 경고를 출력합니다.
-            if (fuelPlaced < fuelToPlace) {
-                console.warn(`Could not place all ${fuelToPlace} fuel items. Only placed ${fuelPlaced}.`);
+            // 5e. 만약 "다른 곳"도 다 썼는데 연료가 남았다면, "가까운 곳"에 마저 채움 (MAX_NEAR_FUEL 제한 무시)
+            while (fuelPlaced < fuelToPlace && nearSpots.length > 0) {
+                 const pos = nearSpots.pop();
+                 board[pos.y][pos.x] = ENTITY_TYPE.FUEL;
+                 fuelPlaced++;
             }
-            // --- END OF NEW FUEL PLACEMENT LOGIC ---
+
+            if (fuelPlaced < fuelToPlace) {
+                console.warn(`배치할 공간이 부족합니다. ${fuelToPlace}개 중 ${fuelPlaced}개만 배치됨.`);
+            }
             
-            // Finally, place the taxi
+            // 6. 마지막으로 택시를 배치합니다.
             board[taxiPos.y][taxiPos.x] = ENTITY_TYPE.TAXI;
         }
+        // --- 맵 생성 로직 수정 끝 ---
         
         function renderBoard() { 
             allDOMElements.gameBoard.innerHTML = '';
@@ -907,6 +890,9 @@
             });
         }
         
+        // ---
+        // --- 수정됨: 보행자 충돌 페널티 로직 ---
+        // ---
         function moveTaxi(dx, dy) { 
             if (!gameActive || currentFuel <= 0) return; 
             if (!firstMoveTime) firstMoveTime = Date.now();
@@ -917,7 +903,6 @@
                 return;
             }
             
-            // --- 수정된 부분 (from previous step) ---
             const destination = board[newY][newX];
 
             // 1. 건물과 충돌
@@ -943,9 +928,9 @@
                 
                 return; // 이동 안 함
             }
-            // --- 수정 끝 ---
 
 
+            // 3. 정상 이동
             playSfx('move');
             board[taxiPos.y][taxiPos.x] = ENTITY_TYPE.EMPTY;
             taxiPos = { x: newX, y: newY };
@@ -955,9 +940,7 @@
             if (destination === ENTITY_TYPE.PASSENGER) {
                 playSfx('pickup');
                 passengersCount++; 
-                // if (!isPracticeMode) playerData.totalPassengers++; // Removed
                 allDOMElements.message.textContent = `승객 ${passengersCount}명 탑승!`;
-                // Removed achievement checks
                 shouldGenerateNewMap = true;
             } else if (destination === ENTITY_TYPE.FUEL) {
                 playSfx('fuel');
@@ -982,10 +965,10 @@
             renderBoard(); updateHUD();
 
             if (currentFuel <= 0) {
-                 // Removed achievement check
                 gameOver('연료 고갈!');
             }
         }
+        // --- 수정 끝 ---
 
         function gameOver(reason) { 
             gameActive = false;
@@ -994,14 +977,12 @@
             playSfx('gameOver');
             document.getElementById('gameover-title').textContent = reason;
             calculateGrade();
-            // Removed saveGameData()
             showModal(allDOMElements.gameoverModal);
         }
 
-        // --- 
-        // --- THIS IS THE (PREVIOUSLY) UPDATED FUNCTION ---
-        // --- (No changes here, this is the correct version)
-        // --- 
+        // ---
+        // --- 수정됨: 별점 계산 로직 (버그 수정 및 5성 조건 수정) ---
+        // ---
         function calculateGrade() { 
             if (isPracticeMode) { 
                 if (passengersCount === 0) {
@@ -1025,22 +1006,22 @@
                 return;
             }
 
-            // 1. [버그 수정] 비교를 위해 순수한 '숫자'로 먼저 계산합니다.
+            // 1. 비교를 위해 순수한 '숫자'로 먼저 계산
             const movesPerPassenger_Num = (passengersCount > 0) ? (totalMoves / passengersCount) : 0;
             
-            // 2. [로직 수정] 별점을 0에서부터 누적하는 방식으로 변경 (더 명확함)
+            // 2. 별점을 0에서부터 누적
             let totalStars = 0;
             if (passengersCount >= 1) totalStars = 1;
             if (passengersCount >= 3) totalStars = 2;
             if (passengersCount >= 6) totalStars = 3;
             
-            // [버그 수정] 'movesPerPassenger_Num' (숫자)로 비교
+            // 'movesPerPassenger_Num' (숫자)로 비교
             if (passengersCount >= 10 && movesPerPassenger_Num < 12) totalStars = 4;
             
-            // 3. [요청 사항] 5성 조건에서 'fuelItemsCollected === 0' 제거
+            // 3. 5성 조건에서 'fuelItemsCollected === 0' 제거됨
             if (currentDifficulty.name === DIFFICULTY.HARD.name && 
                 passengersCount >= 15 && 
-                movesPerPassenger_Num < 8) { //
+                movesPerPassenger_Num < 8) {
                 totalStars = 5;
             }
 
@@ -1053,7 +1034,6 @@
                     // playSfx('achievement'); // 'achievement'가 sfx 객체에 정의되지 않아 오류 발생 가능
                     
                     const toast = document.createElement('div');
-                    // (임시 스타일링: CSS가 없어도 보이도록)
                     toast.style.cssText = `
                         position: fixed;
                         left: 50%;
@@ -1093,13 +1073,14 @@
                 default: title = "다시 도전해보세요!";
             }
             
-            // 4. [버그 수정] 화면에는 .toFixed(1)이 적용된 '문자열'을 사용
+            // 4. 화면에는 .toFixed(1)이 적용된 '문자열'을 사용
             const movesPerPassenger_Display = movesPerPassenger_Num.toFixed(1);
             
             allDOMElements.gradeDisplay.textContent = starString; 
             allDOMElements.gradeText.textContent = title;
             allDOMElements.gradeDetails.innerHTML = `• <strong>태운 승객</strong>: ${passengersCount}명<br> • <strong>이동 효율</strong>: 승객당 ${movesPerPassenger_Display}회 이동<br> • <strong>연료템 사용</strong>: ${fuelItemsCollected}개`;
         }
+        // --- 수정 끝 ---
         
         function showAchievements() { 
             alert("로그인/저장 기능이 제거되어 도전과제를 이용할 수 없습니다.");
@@ -1221,14 +1202,11 @@
             showModal(allDOMElements.gameoverModal);
         }
         
-        // --- 
-        // --- 
-        // --- THIS IS THE START OF THE MODIFICATIONS ---
-        // --- 
-        // --- 
+        // ---
+        // --- 수정됨: 경로 탐색 알고리즘 (BFS, Dijkstra) ---
+        // ---
         
-        // (이 함수(findPathBFS)는 히든 스테이지의 추격자 AI가 사용하므로 수정하지 않습니다)
-        // (또한 generateMap의 버그 수정에도 사용됩니다)
+        // (이 함수는 히든 스테이지 AI와 승객 배치 가능성 검사에 사용됩니다)
         function findPathBFS(start, end, size, mapData, obstacles) { 
             const queue = [{ ...start, path: [] }], visited = new Set([`${start.x},${start.y}`]);
             const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; 
@@ -1252,66 +1230,39 @@
             return null; // No path found
         }
         
-        // --- NEW FUNCTION ADDED (from previous step) ---
-        // 연료를 우선시하는 Dijkstra 기반 경로 탐색기
+        // (이 함수는 연습 모드의 '연료 최적화' 경로에 사용됩니다)
         function findFuelPathDijkstra(start, end, size, mapData, obstacles) {
-            // 우선순위 큐: { x, y, cost, path: [] }
-            // 간단한 배열을 정렬하여 우선순위 큐를 시뮬레이션합니다.
             const priorityQueue = [{ ...start, cost: 0, path: [] }];
-            
-            // 각 셀에 도달하는 데 드는 최소 비용을 저장합니다: Key "x,y", Value: cost
             const costs = new Map();
             costs.set(`${start.x},${start.y}`, 0);
-
             const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
 
             while (priorityQueue.length > 0) {
-                // 비용순으로 정렬하여 가장 우선순위가 높은(비용이 낮은) 항목을 가져옵니다.
                 priorityQueue.sort((a, b) => a.cost - b.cost);
-                const { x, y, cost, path } = priorityQueue.shift(); // Get lowest cost node
+                const { x, y, cost, path } = priorityQueue.shift(); 
 
-                // 목적지 도착
                 if (x === end.x && y === end.y) {
                     return path; 
                 }
-
-                // 이미 더 저렴한 경로로 이 노드를 방문했다면 건너뜁니다.
                 if (cost > (costs.get(`${x},${y}`) || Infinity)) {
                     continue;
                 }
-
-                // 이웃 노드 확인
                 for (const [dx, dy] of directions) {
                     const newX = x + dx, newY = y + dy;
-
-                    // 경계 확인
                     if (newX < 0 || newX >= size || newY < 0 || newY >= size) continue; 
 
                     const key = `${newX},${newY}`;
                     const tile = Array.isArray(mapData[0]) ? mapData[newY][newX] : mapData[newY].charAt(newX); 
                     
-                    // 장애물 확인
                     if (obstacles.includes(tile)) continue;
 
-                    // --- 핵심 로직 ---
-                    // 이동 비용을 할당합니다.
-                    // 연료 셀은 이동 비용이 훨씬 저렴합니다.
-                    let moveCost;
-                    if (tile === ENTITY_TYPE.FUEL) {
-                        // 연료 우선: 일반 이동 비용의 1/10로 설정합니다.
-                        // 즉, 알고리즘은 1개의 연료 항목을 얻기 위해
-                        // 최대 9칸까지 "돌아갈" 의향이 생깁니다.
-                        moveCost = 0.1; 
-                    } else {
-                        moveCost = 1; // 일반 이동 비용
-                    }
-                    // --- 핵심 로직 끝 ---
+                    // 핵심 로직: 연료 칸은 비용을 0.1로, 나머지는 1로 설정
+                    let moveCost = (tile === ENTITY_TYPE.FUEL) ? 0.1 : 1;
                     
                     const newCost = cost + moveCost;
 
-                    // 이 새로운 경로가 해당 셀의 이전 경로보다 저렴하다면...
                     if (newCost < (costs.get(key) || Infinity)) {
-                        costs.set(key, newCost); // 새로운 최저 비용 기록
+                        costs.set(key, newCost); 
                         const newPath = [...path, {x: newX, y: newY}];
                         priorityQueue.push({ x: newX, y: newY, cost: newCost, path: newPath });
                     }
@@ -1320,9 +1271,10 @@
             
             return null; // No path found
         }
-        // --- END OF NEW FUNCTION ---
         
-        // --- THIS FUNCTION IS MODIFIED (from previous step) ---
+        // ---
+        // --- 수정됨: calculatePath가 Dijkstra를 호출하도록 ---
+        // ---
         function calculatePath() {
             if (!passengerPos) { 
                 currentPath = [];
@@ -1330,26 +1282,19 @@
             }
             const obstacles = [ENTITY_TYPE.BUILDING, ENTITY_TYPE.PEDESTRIAN];
             
-            // --- MODIFICATION ---
-            // 기존: const path = findPathBFS(taxiPos, passengerPos, GRID_SIZE, board, obstacles);
-            // 변경:
+            // 연습 모드에서는 BFS 대신 Dijkstra(연료 최적화)를 호출합니다.
             const path = findFuelPathDijkstra(taxiPos, passengerPos, GRID_SIZE, board, obstacles);
-            // --- END MODIFICATION ---
             
             currentPath = path || [];
         }
-        // --- 
-        // --- 
-        // --- END OF MODIFICATIONS ---
-        // --- 
-        // --- 
+        // --- 수정 끝 ---
 
 
         // --- Game Initialization ---
         async function initializeAppSequence() {
              setupEventListeners(); 
              
-             // 튜토리얼 모달의 별점 기준도 수정합니다.
+             // 튜토리얼 모달의 별점 기준도 수정합니다. (ID 중복 수정됨)
              document.getElementById('grade-details-tutorial').innerHTML = `
                 <strong>⭐ 별점 기준 (연습 모드 제외)</strong><br>
                 ★☆☆☆☆: 승객 1명 이상<br>
@@ -1375,3 +1320,4 @@
     </script>
 </body>
 </html>
+
